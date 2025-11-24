@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Thermal Billing - POS</title>
+<style>
+  :root{
+    --accent:#0b6b3a;
+    --danger:#d32f2f;
+    --muted:#666;
+    --paper-bg:#fff;
+  }
+  body{
+    font-family: "Segoe UI", Roboto, Arial, sans-serif;
+    background:#f0f4f8;
+    margin:0;
+    padding:18px;
+    color:#111;
+  }
+
+  /* layout */
+  .wrap { max-width:1200px; margin:0 auto; display:flex; gap:18px; align-items:flex-start; }
+  /* left: entry & items */
+  .left { flex:1; min-width:420px; }
+  .right { width:340px; }
+
+  .card { background:var(--paper-bg); padding:12px; border-radius:8px; box-shadow:0 6px 18px rgba(2,6,23,0.06); }
+
+  h2 { margin:6px 0 12px 0; font-size:18px; }
+  label { display:block; font-size:13px; margin-bottom:6px; color:var(--muted); }
+
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  input[type="text"], input[type="number"]{
+    width:100%; padding:8px; border:1px solid #dbe6ef; border-radius:6px; box-sizing:border-box;
+  }
+
+  .logo {
+  width: 80px;      
+  height: auto;     
+  display: block;
+  margin: 0 auto;   
+}
+
+  /* items table */
+  table { width:100%; border-collapse:collapse; margin-top:12px; font-size:14px; }
+  th, td { padding:8px 6px; border-bottom:1px solid #e6edf3; text-align:center; vertical-align:middle; }
+  th { background:#f7fbff; font-weight:600; font-size:13px; color:#333; }
+  .small { font-size:13px; color:var(--muted); }
+
+  .controls { display:flex; gap:8px; margin-top:12px; }
+  .btn { padding:10px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:600; }
+  .btn.primary { background:var(--accent); color:white; }
+  .btn.ghost { background:transparent; border:1px solid #cfe0d3; color:#123; }
+  .btn.warn { background:var(--danger); color:white; }
+
+  .trash-btn { background:transparent; border:none; cursor:pointer; padding:4px; }
+
+  /* right payment panel */
+  .pay-title { font-size:16px; margin-bottom:8px; }
+  .summary { font-size:16px; margin-top:8px; }
+  .summary .line { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed #eee; }
+  .summary .tot { font-size:18px; font-weight:700; }
+
+  /* thermal invoice preview (hidden area used for print) */
+  .thermal {
+    width:250px; background:white; padding:10px; font-family:monospace; font-size:12px; color:#111;
+  }
+  .thermal .center { text-align:center; }
+  .thermal hr { border:none; border-top:1px dashed #999; margin:6px 0; }
+
+  /* modal */
+  .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center; padding:12px; z-index:40; }
+  .modal { background:white; padding:18px; border-radius:10px; max-width:420px; width:100%; box-shadow:0 12px 32px rgba(2,6,23,0.3); }
+  .modal img { width:100%; max-width:300px; height:auto; display:block; margin:6px auto; }
+
+  /* lists */
+  .list { max-height:320px; overflow:auto; margin-top:10px; }
+
+  /* responsive */
+  @media (max-width:980px){
+    .wrap { flex-direction:column; }
+    .right { width:100%; }
+  }
+
+  /* print rules - use thermal layout when printing */
+  @media print {
+    body * { visibility: hidden; }
+    #printArea, #printArea * { visibility: visible; }
+    #printArea { position: absolute; left:0; top:0; }
+    /* force width for thermal */
+    @page { size: 80mm auto; margin:5mm; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- LEFT -->
+  
+
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+  <img id="shopLogoPreview" src="logo.jpg" class="logo" alt="logo">
+  <div>
+    <div style="font-weight:800" id="shopNameInput">NOW100 SUPERMART</div>
+    <div class="small" id="shopAddrInput">LG-05, Nirala Aspire Plaza Market, Sector 16-B, West, Greater Noida</div>
+    <div class="small" id="shopContInput">Contact - 8920903244</div>
+  </div>
+  <div style="margin-left:auto" class="small" id="datetime"></div>
+</div>
+
+<div class="wrap">
+  <!-- LEFT: Item Entry & Items Table -->
+  <div class="left">
+    <div class="card">
+      
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:800">New Bill</div>
+          <div class="small-muted">Bill no: <span id="billNoDisplay"></span></div>
+        </div>
+        <div style="text-align:right">
+          <div class="small-muted">Customer Details</Details></div>
+          <input id="custName" placeholder="Name" 
+          style="padding:8px; border:1px solid #dbe6ef; border-radius:6px; height:px;"><br><br>
+          <input id="custMobile" placeholder="Mobile" 
+          style="padding:8px; border:1px solid #dbe6ef; border-radius:6px; height:px;"/>
+        </div>
+      </div>
+
+      <hr style="margin:12px 0;border:none;border-top:1px solid #eef3f7">
+<!--
+      <div class="row" style="margin-top:8px">
+        <input id="itemCode" placeholder="Barcode / Code">
+        <input id="itemName" type="text" placeholder="Item name"/>
+        <select id="itemUnit"><option value="pcs">pcs</option><option value="kg">kg</option><option value="liter">liter</option><option value="box">box</option></select>
+        <input id="itemRate" type="number" placeholder="Rate (₹)" min="0" step="0.01"/>
+        <input id="itemQty" type="number" placeholder="Qty" min="1" step="1" value="1"/>
+        <input id="itemDisc" type="number" placeholder="Disc (%)" min="0" max="100" step="0.01" value="0"/>
+        <button class="btn primary" onclick="addItemFromForm()">Add Item</button>
+      </div>
+    -->
+    <div class="row" >
+
+    <input id="itemCode" 
+           placeholder="Barcode"
+           style="padding:8px; border:1px solid #dbe6ef; border-radius:6px; height:px;">
+
+    <input id="itemName" 
+           type="text" 
+           placeholder="Item name"
+           style="padding:8px; border:1px solid #dbe6ef; border-radius:6px; height:40px;"/>
+
+    <select id="itemUnit"
+            style="padding:8px; border:1px solid #dbe6ef; border-radius:6px; height:40px;">
+        <option value="pcs">pcs</option>
+        <option value="kg">kg</option>
+        <option value="liter">liter</option>
+        <option value="box">box</option>
+    </select>
+
+    <input id="itemRate" type="number" 
+           placeholder="Rate (₹)" 
+           min="0" step="0.01"
+           style="padding:8px; border:1px solid #dbe6ef; border-radius:6px; height:40px;"/>
+
+    <input id="itemQty" type="number" 
+           placeholder="Qty" min="1" step="1" value="1"
+           style="padding:8px; border:1px solid #dbe6ef; border-radius:6px; height:40px;"/>
+
+    <input id="itemDisc" type="number" 
+           placeholder="Disc (%)" min="0" max="100" step="0.01" value="0"
+           style="padding:8px; border:1px solid #dbe6ef; border-radius:6px; height:40px;"/>
+
+    <button class="btn primary" 
+            onclick="addItemFromForm()" 
+            style="height:40px;">
+        Add Item
+    </button>
+
+</div>
+
+
+
+      <table id="itemsTbl" aria-label="items">
+        <thead>
+          <tr>
+            <th>S.No</th>
+            <th>Code</th>
+            <th>Item</th>
+            <th>Unit</th>
+            <th>Rate</th>
+            <th>Qty</th>
+            <th>Disc(%)</th>
+            <th>Total(₹)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="controls" style="justify-content:flex-start;">
+        <button class="btn ghost" onclick="clearAllItems()">Clear Items</button>
+        <button class="btn primary" onclick="recalcAll()">Recalculate</button>
+      </div>
+    </div>
+
+    <!-- saved bills & reports -->
+    <div class="card" style="margin-top:12px;">
+      <h2>Saved Bills & Reports</h2>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn ghost" onclick="showSavedBills()">View Saved Bills</button>
+        <button class="btn ghost" onclick="showDailyReport()">Daily Sales</button>
+        <button class="btn ghost" onclick="showMonthlyReport()">Monthly Sales</button>
+      </div>
+      <div class="list" id="reportsList" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Payment Panel -->
+  <div class="right">
+    <div class="card">
+      <div class="pay-title">Payment & Summary</div>
+
+      <div class="summary">
+        <div class="line"><div>Subtotal:</div><div id="subAmt">0.00</div></div>
+        <div class="line"><div>Total Discount:</div><div id="discAmt">0.00</div></div>
+        <div class="line"><div class="tot">Grand Total:</div><div class="tot" id="grandAmt">0.00</div></div>
+      </div>
+
+      <hr style="margin:12px 0; border:none; border-top:1px solid #eee;">
+
+      <div>
+        <label class="small">Payment Method</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <label><input type="radio" name="payMethod" value="cash" checked onchange="onPaymentChange()"> Cash</label>
+          <label><input type="radio" name="payMethod" value="online" onchange="onPaymentChange()"> Online (QR)</label>
+        </div>
+
+        <div id="cashBox" style="margin-top:10px;">
+          <label class="small">Amount Received (₹)</label>
+          <input id="amtReceived" type="number" min="0" step="0.01" value="0" oninput="updateBalance()"/>
+          <div style="margin-top:8px;" class="small">Balance: ₹ <span id="balance">0.00</span></div>
+        </div>
+
+        <div id="onlineBox" style="margin-top:10px; display:none;">
+          <button class="btn primary" onclick="openQR()">Open QR (Popup)</button>
+          <div class="small" style="margin-top:8px;">Scan to pay. After payment click <b>Save Bill</b>.</div>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:12px;">
+          <button class="btn primary" onclick="saveCurrentBill()">Save Bill</button>
+          <button class="btn ghost" onclick="printPreview()">Print / PDF</button>
+          <button class="btn" onclick="saveAndOpenWhatsApp()">Save & WhatsApp</button>
+          <button class="btn warn" onclick="resetAfterConfirm()">Reset</button>
+        </div>
+
+        <div style="margin-top:10px;" class="small muted">Saved bills are stored locally in your browser. Use 'View Saved Bills' to open or reprint.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- QR modal (popup) -->
+<div id="qrModal" class="modal-backdrop" onclick="closeQR(event)">
+  <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <strong>Scan to Pay</strong>
+      <button class="btn ghost" onclick="closeQR()">Close</button>
+    </div>
+    <div style="margin-top:8px;">
+      <!-- USE the local path to the uploaded file as requested -->
+      <img src="payment.jpg" alt="QR" />
+    </div>
+    <div style="margin-top:8px;" class="small muted">After scanning, confirm payment and click "Save Bill".</div>
+  </div>
+</div>
+
+<!-- print area: thermal formatted receipt (hidden on screen except in preview) -->
+<div id="printArea" style="display:none; padding:10px;">
+  <div class="thermal" id="thermalReceipts">
+    <!-- generated content -->
+  </div>
+</div>
+
+<!-- modal for saved bills / reports -->
+<div id="genericModal" class="modal-backdrop" onclick="closeGenericModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <strong id="gTitle">Modal</strong>
+      <button class="btn ghost" onclick="closeGenericModal()">Close</button>
+    </div>
+    <div id="gBody" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<script>
+/* -------------------------
+   App constants & state
+   ------------------------- */
+const QR_IMG = "payment.jpg"; // local path from your upload
+const STORAGE_KEY = "thermal_bills_v1"; // saved bills array
+
+let items = []; // current bill items
+let editingBillId = null; // if viewing/editing a saved bill
+
+/* -------------------------
+   Helpers
+   ------------------------- */
+function fmt(n){ return Number(n || 0).toFixed(2); }
+function nowISO(){ return new Date().toISOString(); }
+function todayDateStr(){ return new Date().toLocaleDateString(); }
+function monthKey(dt=new Date()){ return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}`; }
+
+/* -------------------------
+   UI: Date/time
+   ------------------------- */
+function showDateTime(){
+  const el = document.getElementById("datetime");
+  const d = new Date();
+  el.textContent = d.toLocaleDateString() + "  " + d.toLocaleTimeString();
+}
+showDateTime(); setInterval(showDateTime,60000);
+
+/* -------------------------
+   Items management
+   ------------------------- */
+function addItemFromForm(){
+  const code = document.getElementById("itemCode").value.trim();
+  const name = document.getElementById("itemName").value.trim() || "Item";
+  const unit = document.getElementById("itemUnit").value;
+  const rate = parseFloat(document.getElementById("itemRate").value) || 0;
+  const qty  = parseFloat(document.getElementById("itemQty").value) || 1;
+  const disc = parseFloat(document.getElementById("itemDisc").value) || 0;
+
+  addItem({code, name, unit, rate, qty, disc});
+  // clear input except name for quick add
+  document.getElementById("itemCode").value = "";
+  document.getElementById("itemName").value = "";
+  document.getElementById("itemUnit").value = "pcs";
+  document.getElementById("itemRate").value = "";
+  document.getElementById("itemQty").value = 1;
+  document.getElementById("itemDisc").value = 0;
+  document.getElementById("itemName").focus();
+}
+
+function addItem(it){
+  items.push(it);
+  renderItems();
+  recalcAll();
+}
+
+function deleteItem(idx){
+  items.splice(idx,1);
+  renderItems();
+  recalcAll();
+}
+
+function clearAllItems(){
+  if(!confirm("Clear all current items?")) return;
+  items = [];
+  renderItems();
+  recalcAll();
+}
+
+function renderItems(){
+  const tbody = document.querySelector("#itemsTbl tbody");
+  tbody.innerHTML = "";
+  items.forEach((it, i) => {
+    // compute per-item total according to Option B (discount on rate per unit)
+    const discountedRate = it.rate * (1 - (it.disc||0)/100);
+    const total = +(discountedRate * it.qty).toFixed(2);
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td>
+         <input value="${escapeHtml(it.code)}" 
+         onchange="onItemEdit(${i}, 'code', this.value)" 
+         style="width:90%; padding:6px; border:1px solid #dbe6ef; border-radius:6px;" />
+         </td>
+
+      <td style="text-align:left;">
+        <input value="${escapeHtml(it.name)}"
+        onchange="onItemEdit(${i}, 'name', this.value)"
+        style="width:90%; padding:6px; border:1px solid #dbe6ef; border-radius:6px;" />
+      
+      <td>
+          <select onchange="onItemEdit(${i}, 'unit', this.value)" 
+          style="width:120%; padding:5px; border:1px solid #dbe6ef; border-radius:6px;">
+          <option value="pcs" ${it.unit==='pcs'?'selected':''}>pcs</option>
+          <option value="kg" ${it.unit==='kg'?'selected':''}>kg</option>
+          <option value="liter" ${it.unit==='liter'?'selected':''}>liter</option>
+          <option value="box" ${it.unit==='box'?'selected':''}>box</option>
+          </select>
+          </td>
+      <td><input type="number" value="${it.rate}" min="0" step="1" onchange="onItemEdit(${i}, 'rate', this.value)"/></td>
+      <td><input type="number" value="${it.qty}" min="0" step="1" onchange="onItemEdit(${i}, 'qty', this.value)"/></td>
+      <td><input type="number" value="${it.disc}" min="0" max="100" step="1" onchange="onItemEdit(${i}, 'disc', this.value)"/></td>
+      <td>${fmt(total)}</td>
+      <td><button class="trash-btn" onclick="deleteItem(${i})" title="Delete"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18" stroke="${'#d32f2f'}" stroke-width="2" stroke-linecap="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="${'#d32f2f'}" stroke-width="2" stroke-linecap="round"/><path d="M10 11v6M14 11v6" stroke="${'#d32f2f'}" stroke-width="2" stroke-linecap="round"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="${'#d32f2f'}" stroke-width="2" stroke-linecap="round"/></svg></button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+/* sanitize for inputs in HTML attributes */
+function escapeHtml(s){
+  return (""+s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+}
+
+function onItemEdit(idx, field, val){
+  if(field==='name') items[idx].name = val;
+  else if(field==='rate') items[idx].rate = parseFloat(val) || 0;
+  else if(field==='qty') items[idx].qty = parseFloat(val) || 0;
+  else if(field==='disc') items[idx].disc = parseFloat(val) || 0;
+  renderItems();
+  recalcAll();
+}
+
+/* -------------------------
+   Calculations
+   ------------------------- */
+function recalcAll(){
+  let subtotal = 0;
+  let totalDisc = 0;
+  let grand = 0;
+
+  items.forEach(it=>{
+    const before = it.rate * it.qty;
+    const discountedRate = it.rate * (1 - (it.disc||0)/100);
+    const after = discountedRate * it.qty;
+    subtotal += before;
+    totalDisc += (before - after);
+    grand += after;
+  });
+
+  document.getElementById("subAmt").textContent = fmt(subtotal);
+  document.getElementById("discAmt").textContent = fmt(totalDisc);
+  document.getElementById("grandAmt").textContent = fmt(grand);
+
+  // also update pay area values
+  document.getElementById("amtReceived").value = Number(document.getElementById("amtReceived").value || 0);
+  updateBalance();
+}
+
+/* -------------------------
+   Payment handling
+   ------------------------- */
+function onPaymentChange(){
+  const v = document.querySelector('input[name="payMethod"]:checked').value;
+  document.getElementById("cashBox").style.display = v==='cash' ? 'block' : 'none';
+  document.getElementById("onlineBox").style.display = v==='online' ? 'block' : 'none';
+}
+
+function updateBalance(){
+  const grand = parseFloat(document.getElementById("grandAmt").textContent) || 0;
+  const rec = parseFloat(document.getElementById("amtReceived").value) || 0;
+  const bal = rec - grand;
+  document.getElementById("balance").textContent = fmt(bal >= 0 ? bal : bal);
+}
+
+/* -------------------------
+   QR Modal
+   ------------------------- */
+function openQR(){ document.getElementById("qrModal").style.display = "flex"; }
+function closeQR(e){ document.getElementById("qrModal").style.display = "none"; }
+
+/* -------------------------
+   Save / Load bills (localStorage)
+   ------------------------- */
+function loadSavedBills(){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch(e){ return []; }
+}
+function saveAllBills(arr){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr || []));
+}
+
+function saveCurrentBill(){
+  // prepare bill object
+  const now = new Date();
+  const grand = parseFloat(document.getElementById("grandAmt").textContent) || 0;
+  if(items.length===0){ alert("Add items before saving the bill."); return; }
+  const payMethod = document.querySelector('input[name="payMethod"]:checked').value;
+  const received = parseFloat(document.getElementById("amtReceived").value) || 0;
+  const custName = document.getElementById("custName").value || "";
+  const custMobile = document.getElementById("custMobile").value || "";
+  
+  const bill = {
+    id: 'B' + Date.now(),
+    custName: custName,
+    custMobile: custMobile,
+    ts: now.toISOString(),
+    date: now.toLocaleDateString(),
+    month: monthKey(now),
+    items: JSON.parse(JSON.stringify(items)),
+    subtotal: parseFloat(document.getElementById("subAmt").textContent) || 0,
+    totalDiscount: parseFloat(document.getElementById("discAmt").textContent) || 0,
+    grandTotal: grand,
+    payment: { method: payMethod, received: received, balance: +(received - grand).toFixed(2) }
+  };
+
+  const all = loadSavedBills();
+  all.push(bill);
+  saveAllBills(all);
+
+  // show success and options
+  alert("Bill saved ✅ — ID: " + bill.id);
+  // print automatically (optional) - comment/uncomment as desired
+  // generateThermalAndPrint(bill);
+  // reset
+  resetAfterSave();
+}
+
+/* reset current bill after saving */
+function resetAfterSave(){
+  items = [];
+  renderItems();
+  document.getElementById("amtReceived").value = 0;
+  document.querySelector('input[name="payMethod"][value="cash"]').checked = true;
+  onPaymentChange();
+  recalcAll();
+}
+
+/* confirm reset */
+function resetAfterConfirm(){
+  if(confirm("Reset current bill? (this will clear all items)")){
+    resetAfterSave();
+  }
+}
+
+/* view saved bills listing */
+function showSavedBills(){
+  const all = loadSavedBills().slice().reverse(); // latest first
+  const body = document.getElementById("gBody");
+  document.getElementById("gTitle").innerText = "Saved Bills (" + all.length + ")";
+  if(all.length===0){
+    body.innerHTML = "<div class='small muted'>No saved bills yet.</div>";
+  } else {
+    let html = "<div style='display:flex;flex-direction:column; gap:8px;'>";
+    all.forEach(b=>{
+      html += `<div style="padding:8px;border-radius:6px;border:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:700">${b.id}</div>
+          <div class="small">${b.date} • ${new Date(b.ts).toLocaleTimeString()}</div>
+          <div class="small">₹ ${fmt(b.grandTotal)}</div>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <button class="btn ghost" onclick='viewBill("${b.id}")'>View</button>
+          <button class="btn primary" onclick='printSavedBill("${b.id}")'>Print</button>
+          <button class="btn warn" onclick='deleteSavedBill("${b.id}")'>Delete</button>
+        </div>
+      </div>`;
+    });
+    html += "</div>";
+    body.innerHTML = html;
+  }
+  openGenericModal();
+}
+
+/* view single bill details */
+function viewBill(id){
+  const all = loadSavedBills();
+  const b = all.find(x=>x.id===id);
+  if(!b) return alert("Bill not found");
+  let html = `<div style="max-height:520px; overflow:auto;">`;
+  html += renderBillHTML(b, true);
+  html += `<div style="display:flex; gap:6px; margin-top:10px;">
+    <button class="btn primary" onclick='printSavedBill("${b.id}")'>Print</button>
+    <button class="btn ghost" onclick='editSavedBill("${b.id}")'>Load to Editor</button>
+    <button class="btn warn" onclick='deleteSavedBill("${b.id}")'>Delete</button>
+  </div></div>`;
+  document.getElementById("gBody").innerHTML = html;
+  document.getElementById("gTitle").innerText = "Bill " + b.id;
+  openGenericModal();
+}
+
+/* delete saved bill */
+function deleteSavedBill(id){
+  if(!confirm("Delete this saved bill?")) return;
+  let arr = loadSavedBills();
+  arr = arr.filter(b=>b.id!==id);
+  saveAllBills(arr);
+  closeGenericModal();
+  showSavedBills();
+}
+
+/* load saved bill into editor for reprint/modify */
+function editSavedBill(id){
+  const arr = loadSavedBills();
+  const b = arr.find(x=>x.id===id);
+  if(!b) return;
+  // load items and amounts
+  items = JSON.parse(JSON.stringify(b.items));
+  document.getElementById("amtReceived").value = b.payment.received || 0;
+  // set payment method
+  if(b.payment.method === 'online') document.querySelector('input[name="payMethod"][value="online"]').checked = true;
+  else document.querySelector('input[name="payMethod"][value="cash"]').checked = true;
+  onPaymentChange();
+  renderItems();
+  recalcAll();
+  closeGenericModal();
+}
+
+/* -------------------------
+   Thermal invoice generation & printing
+   ------------------------- */
+function renderBillHTML(bill, small=false){
+  // returns html fragment for a bill (suitable for modal or print area)
+  let html = `<div style="font-family:monospace; width:100%;">`;
+  html += `<div class="center" style="text-align:center;"><strong>NOW100 SUPERMART</strong><div class="small muted">LG-05, Nirala Aspire Plaza Market, Sector 16-B, West, Greater Noida</div></div>`;
+  html += `<hr/>`;
+  html += `<div><div>Bill ID: ${bill.id}</div><div>Date: ${new Date(bill.ts).toLocaleString()}</div></div>`;
+    
+  html += `<hr/>`;
+  html += `<table style="width:100%; font-size:12px; border-collapse:collapse;"><thead><tr><th style="text-align:left">Item</th><th>Q</th><th>R</th><th>Disc%</th><th style="text-align:right">Amt</th></tr></thead><tbody>`;
+  bill.items.forEach(it=>{
+    const discountedRate = it.rate * (1 - (it.disc||0)/100);
+    const amt = +(discountedRate * it.qty).toFixed(2);
+    html += `<tr><td style="text-align:left">${escapeHtml(it.name)}</td><td style="text-align:center">${it.qty}</td><td style="text-align:center">${fmt(it.rate)}</td><td style="text-align:center">${fmt(it.disc)}</td><td style="text-align:right">${fmt(amt)}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+  html += `<hr/>`;
+  html += `<div style="display:flex; justify-content:space-between;"><div>Subtotal</div><div>₹ ${fmt(bill.subtotal)}</div></div>`;
+  html += `<div style="display:flex; justify-content:space-between;"><div>Discount</div><div>- ₹ ${fmt(bill.totalDiscount)}</div></div>`;
+  html += `<div style="display:flex; justify-content:space-between; font-weight:700;"><div>Grand Total</div><div>₹ ${fmt(bill.grandTotal)}</div></div>`;
+  html += `<hr/>`;
+  html += `<div>Payment: ${bill.payment.method.toUpperCase()} • Received: ₹ ${fmt(bill.payment.received)} • Balance: ₹ ${fmt(bill.payment.balance)}</div>`;
+  html += `<div>Customer: ${bill.custName || ''} ${bill.custMobile || ''}</div>`;
+  
+  html += `<hr/>`;
+  html += `<div style="text-align:center;font-size:12px">Thank You! Visit again.</div>`;
+  html += `</div>`;
+  return html;
+}
+
+function generateThermalAndPrint(bill){
+  const container = document.getElementById("thermalReceipts");
+  container.innerHTML = renderBillHTML(bill);
+  // show print area
+  document.getElementById("printArea").style.display = "block";
+  setTimeout(()=> window.print(), 200);
+}
+
+/* print preview of current items (not saved) */
+function printPreview(){
+  if(items.length===0){ alert("No items to print"); return; }
+   
+    const bill = {
+    id: 'TEMP-' + Date.now(),
+    custName: document.getElementById("custName").value,
+    custMobile: document.getElementById("custMobile").value,
+    ts: new Date().toISOString(),
+    items: JSON.parse(JSON.stringify(items)),
+    subtotal: parseFloat(document.getElementById("subAmt").textContent) || 0,
+    totalDiscount: parseFloat(document.getElementById("discAmt").textContent) || 0,
+    grandTotal: parseFloat(document.getElementById("grandAmt").textContent) || 0,
+    payment: {
+        method: document.querySelector('input[name="payMethod"]:checked').value,
+        received: parseFloat(document.getElementById("amtReceived").value) || 0,
+        balance: (
+            (parseFloat(document.getElementById("amtReceived").value) || 0) -
+            (parseFloat(document.getElementById("grandAmt").textContent) || 0)
+        ).toFixed(2)
+    }
+};
+
+  generateThermalAndPrint(bill);
+}
+
+/* print a saved bill by id */
+function printSavedBill(id){
+  const all = loadSavedBills();
+  const b = all.find(x=>x.id===id);
+  if(!b) return alert("Bill not found");
+  generateThermalAndPrint(b);
+}
+
+/* -------------------------
+   Reports: daily & monthly
+   ------------------------- */
+function computeDailySales(){
+  const all = loadSavedBills();
+  const map = {};
+  all.forEach(b=>{
+    map[b.date] = (map[b.date]||0) + (b.grandTotal||0);
+  });
+  // convert to array sorted desc
+  const arr = Object.keys(map).map(k=>({date:k,total:map[k]})).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  return arr;
+}
+
+function computeMonthlySales(){
+  const all = loadSavedBills();
+  const map = {};
+  all.forEach(b=>{
+    map[b.month] = (map[b.month]||0) + (b.grandTotal||0);
+  });
+  const arr = Object.keys(map).map(k=>({month:k,total:map[k]})).sort((a,b)=>a.month < b.month ? 1 : -1);
+  return arr;
+}
+
+function showDailyReport(){
+  const arr = computeDailySales();
+  let html = `<div>`;
+  if(arr.length===0) html += `<div class="small muted">No sales yet.</div>`;
+  else {
+    html += `<table style="width:100%; border-collapse:collapse;"><thead><tr><th>Date</th><th>Total (₹)</th></tr></thead><tbody>`;
+    arr.forEach(r=> html += `<tr><td>${r.date}</td><td style="text-align:right">${fmt(r.total)}</td></tr>`);
+    html += `</tbody></table>`;
+    const sum = arr.reduce((s,a)=>s+a.total,0);
+    html += `<div style="margin-top:8px; text-align:right; font-weight:700">Day Sum: ₹ ${fmt(sum)}</div>`;
+  }
+  html += `</div>`;
+  document.getElementById("gBody").innerHTML = html;
+  document.getElementById("gTitle").innerText = "Daily Sales Report";
+  openGenericModal();
+}
+
+function showMonthlyReport(){
+  const arr = computeMonthlySales();
+  let html = `<div>`;
+  if(arr.length===0) html += `<div class="small muted">No sales yet.</div>`;
+  else {
+    html += `<table style="width:100%; border-collapse:collapse;"><thead><tr><th>Month</th><th>Total (₹)</th></tr></thead><tbody>`;
+    arr.forEach(r=> html += `<tr><td>${r.month}</td><td style="text-align:right">${fmt(r.total)}</td></tr>`);
+    html += `</tbody></table>`;
+    const sum = arr.reduce((s,a)=>s+a.total,0);
+    html += `<div style="margin-top:8px; text-align:right; font-weight:700">Month Sum: ₹ ${fmt(sum)}</div>`;
+  }
+  html += `</div>`;
+  document.getElementById("gBody").innerHTML = html;
+  document.getElementById("gTitle").innerText = "Monthly Sales Report";
+  openGenericModal();
+}
+
+/* generic modal */
+function openGenericModal(){ document.getElementById("genericModal").style.display = "flex"; }
+function closeGenericModal(){ document.getElementById("genericModal").style.display = "none"; }
+function closeGenericModal(e){ document.getElementById("genericModal").style.display = "none"; }
+function closeGenericModal(event){ document.getElementById("genericModal").style.display = "none"; }
+
+/* helper to open modal programmatically */
+function openGenericModal(){
+  document.getElementById("genericModal").style.display = "flex";
+}
+
+/* -------------------------
+   Utilities
+   ------------------------- */
+// small escape utility for rendering inside HTML in some places
+function esc(s){ return (""+s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
+
+/* initialize */
+renderItems();
+recalcAll();
+onPaymentChange();
+
+/* expose some functions to global for inline handlers used above */
+window.addItemFromForm = addItemFromForm;
+window.deleteItem = deleteItem;
+window.clearAllItems = clearAllItems;
+window.recalcAll = recalcAll;
+window.saveCurrentBill = saveCurrentBill;
+window.showSavedBills = showSavedBills;
+window.showDailyReport = showDailyReport;
+window.showMonthlyReport = showMonthlyReport;
+window.printSavedBill = printSavedBill;
+window.viewBill = viewBill;
+window.editSavedBill = editSavedBill;
+window.deleteSavedBill = deleteSavedBill;
+window.openQR = openQR;
+window.closeQR = closeQR;
+window.printPreview = printPreview;
+window.resetAfterConfirm = resetAfterConfirm;
+window.onPaymentChange = onPaymentChange;
+</script>
+</body>
+</html>
