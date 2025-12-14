@@ -109,9 +109,9 @@
           <div class="small-muted">Customer Details</div>
           
           <input id="custName" placeholder="Customer Name" 
-          style="padding:8px; border:1px solid #dbe6ef; border-radius:6px; height:px;" />
+          style="padding:8px; border:1px solid #dbe6ef; border-radius:6px;" />
           <div style="height:6px"></div>
-          <input id="custMobile" type="Number" placeholder="Mobile Number (+91)" />
+          <input id="custMobile" type="number" placeholder="Mobile Number (+91)" />
           <div style="height:6px"></div>
           <div style="display:flex; gap:6px; margin-top:6px;">
             <button class="btn ghost" onclick="openCustomers()">Customers</button>
@@ -380,9 +380,9 @@ function renderItems(){
           <option value="box" ${it.unit==='box'?'selected':''}>box</option>
         </select>
       </td>
-      <td><input type="number" value="${it.rate}" min="0" step="0.01" onchange="onItemEdit(${i},'rate',this.value)"/></td>
-      <td><input type="number" value="${it.qty}" min="0" step="0.01" onchange="onItemEdit(${i},'qty',this.value)"/></td>
-      <td><input type="number" value="${it.disc}" min="0" max="100" step="0.01" onchange="onItemEdit(${i},'disc',this.value)"/></td>
+      <td><input type="number" value="${it.rate}" min="0" step="1" onchange="onItemEdit(${i},'rate',this.value)"/></td>
+      <td><input type="number" value="${it.qty}" min="0" step="1" onchange="onItemEdit(${i},'qty',this.value)"/></td>
+      <td><input type="number" value="${it.disc}" min="0" max="100" step="1" onchange="onItemEdit(${i},'disc',this.value)"/></td>
       <td>${fmt(total)}</td>
       <td><button class="trash-btn" onclick="deleteItem(${i})" title="Delete">🗑️</button></td>
     `;
@@ -515,57 +515,213 @@ function resetAfterSave(){
   recalcAll();
 }
 
+function generateThermalText_NON_GST(bill /*, gstPercent=18 */){
+  /* const halfGST = gstPercent / 2; */
+  let t = "";
+  t += "        NOW100 SUPERMART\n";
+  t += "-----------------------------------------------\n";
+  t += "LG-05, Nirala Aspire Plaza\n";
+  t += "Greater Noida (W)\n";
+  /*t += "GSTIN: 09ABCDE1234F1Z5\n";*/
+  t += "Ph: 8920903244\n";
+  t += "-----------------------------------------------\n";
+  t += "        TAX INVOICE\n";
+  t += "-----------------------------------------------\n";
+  t += `Bill No : ${bill.id}\n`;
+  t += `Date    : ${new Date(bill.ts).toLocaleString()}\n`;
+  t += `Customer: ${bill.custName} | Mobile: ${bill.custMobile}\n`;
+  t += "-----------------------------------------------\n";
+  t += "S.N Item          Qty  Rate      Disc   Amt\n";
+  t += "-----------------------------------------------\n";
+
+/*let taxable = 0;*/
+  let itemCount = 0;
+  bill.items.forEach((it, i) =>{
+    const rateAfterDisc = it.rate * (1 - (it.disc||0)/100);
+    const amt = (rateAfterDisc * it.qty).toFixed(2);
+
+    const sno  = String(i + 1).padEnd(3, " ");
+    const name = (it.name || "").substring(0,14).padEnd(14," ");
+    const unit = (it.unit || "").padEnd(3, " ");
+    const qty  = `${it.qty}${it.unit}`.padEnd(5," ");
+    const rate = it.rate.toFixed(2).padStart(7," ");
+    const disc = `${it.disc || 0}%`.padStart(6," ");
+    const tot  = amt.padStart(8," ");
+
+    t += `${sno} ${name} ${qty} ${rate} ${disc} ${tot}\n`;
+  });
+
+  t += "-----------------------------------------------\n";
+  t += `Subtotal          ${bill.subtotal.toFixed(2)}\n`;
+  t += `Discount          ${bill.totalDiscount.toFixed(2)}\n`;
+  t += "-----------------------------------------------\n";
+  t += `TOTAL             ${bill.grandTotal.toFixed(2)}\n`;
+  t += "-----------------------------------------------\n";
+  t += `Payment : ${bill.payment?.method?.toUpperCase() || "CASH"}  |  AMOUNT : ${bill.grandTotal.toFixed(2)}\n`;
+  
+  t += "-----------------------------------------------\n";
+  t += " Thank You! Visit Again 🙂\n";
+
+  return t;
+}
+
+/*
+function generateThermalText_GST(bill, gstPercent = 5){
+  const halfGST = gstPercent / 2;
+
+  let t = "";
+  t += "        NOW100 SUPERMART\n";
+  t += "--------------------------------\n";
+  t += "LG-05, Nirala Aspire Plaza\n";
+  t += "Greater Noida (W)\n";
+  t += "GSTIN: 09ABCDE1234F1Z5\n";
+  t += "Ph: 8920903244\n";
+  t += "--------------------------------\n";
+  t += `Bill No : ${bill.id}\n`;
+  t += `Date    : ${new Date(bill.ts).toLocaleString()}\n`;
+  t += `Customer: ${bill.custName}\n`;
+  t += "--------------------------------\n";
+  t += "Item            Qty  Rate   Amt\n";
+  t += "--------------------------------\n";
+
+  let taxable = 0;
+
+  bill.items.forEach(it=>{
+    const rateAfterDisc = it.rate * (1 - (it.disc||0)/100);
+    const amt = rateAfterDisc * it.qty;
+    taxable += amt;
+
+    const name = (it.name || "").substring(0,14).padEnd(14," ");
+    const qty  = `${it.qty}${it.unit}`.padEnd(5," ");
+    const rate = it.rate.toFixed(2).padStart(6," ");
+    const tot  = amt.toFixed(2).padStart(7," ");
+
+    t += `${name} ${qty} ${rate} ${tot}\n`;
+  });
+
+  const cgst = taxable * (halfGST/100);
+  const sgst = taxable * (halfGST/100);
+  const grand = taxable + cgst + sgst;
+
+  t += "--------------------------------\n";
+  t += `Taxable Val       ${taxable.toFixed(2)}\n`;
+  t += `CGST @${halfGST}%        ${cgst.toFixed(2)}\n`;
+  t += `SGST @${halfGST}%        ${sgst.toFixed(2)}\n`;
+  t += "--------------------------------\n";
+  t += `GRAND TOTAL       ${grand.toFixed(2)}\n`;
+  t += "--------------------------------\n";
+  t += `Payment : ${bill.payment?.method?.toUpperCase() || "ONLINE"}\n`;
+  t += "--------------------------------\n";
+  t += " Thank You! Visit Again 🙂\n";
+
+  return t;
+}
+
+*/
+
 /* Save & WhatsApp (auto download HTML + open WA chat) */
 function saveBillAndWhatsApp(){
-  if(items.length===0){ alert("Add items before saving the bill."); return; }
+  if(items.length === 0){
+    alert("Add items before saving the bill.");
+    return;
+  }
 
   const bill = buildBillObject();
-  // save
-  const all = read(STORAGE_KEY) || []; all.push(bill); write(STORAGE_KEY, all);
+
+  /* =========================
+     1️⃣ OPEN WHATSAPP FIRST
+     (direct user click)
+  ========================= */
+  openWhatsAppForBill(bill);
+
+  /* =========================
+     2️⃣ SAVE BILL
+  ========================= */
+  const all = read(STORAGE_KEY) || [];
+  all.push(bill);
+  write(STORAGE_KEY, all);
+
   addBillToCustomer(bill);
   adjustStockOnSale(bill);
 
-  // generate printable HTML and auto-download (browser will download .html)
+  /* =========================
+     3️⃣ DOWNLOAD BILL
+  ========================= */
   const html = generatePrintableHTML(bill);
-  const blob = new Blob([html], {type: "text/html"});
+  const blob = new Blob([html], { type: "text/html" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url; a.download = bill.id + ".html"; a.click();
-  setTimeout(()=> URL.revokeObjectURL(url), 2000);
 
-  // open WhatsApp chat with prefilled message (user will attach downloaded file manually)
-  openWhatsAppForBill(bill);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = bill.id + ".html";
+  a.click();
 
-  alert("Bill saved & PDF/HTML downloaded. WhatsApp opened — attach the file to send.");
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+
   resetAfterSave();
 }
 
-/* open WhatsApp with message */
 function openWhatsAppForBill(bill){
-    const mobile = (bill.custMobile || "").replace(/\D/g, "");
+  const mobile = (bill.custMobile || "").replace(/\D/g,"");
+  if(!mobile){
+    alert("Mobile number missing");
+    return;
+  }
 
-    let finalMobile = "";
-    if(mobile.length === 10) finalMobile = "91" + mobile;
-    else if(mobile.length > 10) finalMobile = mobile;
+  const finalMobile = mobile.length === 10 ? "91"+mobile : mobile;
 
-    const message =
-`🧾 *Invoice Details*
+  const message = generateThermalText_NON_GST(bill);
+    
+/*
+const message = isGST
+  ? generateThermalText_GST(bill, 5)
+  : generateThermalText_NON_GST(bill);
+*/
+
+  const url =
+    "https://wa.me/" +
+    finalMobile +
+    "?text=" +
+    encodeURIComponent(message);
+
+  window.open(url, "_blank");
+}
+
+
+
+/* open WhatsApp with message */
+/*
+function openWhatsAppForBill(bill){
+  const mobile = (bill.custMobile || "").replace(/\D/g, "");
+
+  let finalMobile = "";
+  if(mobile.length === 10) finalMobile = "91" + mobile;
+  else if(mobile.length > 10) finalMobile = mobile;
+
+  if(!finalMobile){
+    alert("Customer mobile number missing");
+    return;
+  }
+
+  const message =
+`🧾 Invoice Details
 Bill ID: ${bill.id}
 Date: ${new Date(bill.ts).toLocaleString()}
-Customer: ${bill.custName} (${bill.custMobile})
+Customer: ${bill.custName}
 Total Amount: ₹ ${bill.grandTotal}
 
-Your bill is ready. Please check.`;
+Your bill is ready.`;
 
-    const encoded = encodeURIComponent(message);
+  const url =
+    "https://wa.me/" +
+    finalMobile +
+    "?text=" +
+    encodeURIComponent(message);
 
-    let url = "https://wa.me/";
-    if(finalMobile) url += finalMobile;
-    url += "?text=" + encoded;
-
-    setTimeout(() => { 
-        window.open(url, "_blank"); 
-    }, 200);
+  window.open(url, "_blank"); // ✅ NOT BLOCKED
 }
+
+*/
 
 
 /* -------------------------
@@ -1099,8 +1255,10 @@ function showMonthlyReport(){
    Generic modal helpers
    ------------------------- */
 function openGenericModal(){ document.getElementById("genericModal").style.display = "flex"; }
-function closeGenericModal(){ document.getElementById("genericModal").style.display = "none"; }
-function closeGenericModal(event){ document.getElementById("genericModal").style.display = "none"; }
+function closeGenericModal(){
+  document.getElementById("genericModal").style.display = "none";
+}
+
 
 /* customer & stock modal helpers */
 function closeStockModal(){ document.getElementById("stockModal").style.display = "none"; }
